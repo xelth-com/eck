@@ -9,16 +9,16 @@ Rust-based blind relay service for encrypted packet routing between eckWMS insta
 │              Eck Relay Server (Rust)             │
 │              9eck.com/E/  xelth.com/E/          │
 ├─────────────────────────────────────────────────┤
-│  ┌──────────┐  ┌──────────┐  ┌───────────────┐ │
-│  │  Axum    │  │  SQLite  │  │  Rate Limiter │ │
-│  │  Router  │  │  (WAL)   │  │  (governor)   │ │
-│  └────┬─────┘  └────┬─────┘  └───────────────┘ │
-│       │              │                           │
-│  ┌────┴─────────────┴──────────────────────────┐│
+│  ┌──────────┐  ┌────────────┐  ┌─────────────┐ │
+│  │  Axum    │  │ PostgreSQL │  │ Rate Limiter│ │
+│  │  Router  │  │  (shared)  │  │ (governor)  │ │
+│  └────┬─────┘  └─────┬──────┘  └─────────────┘ │
+│       │               │                          │
+│  ┌────┴──────────────┴─────────────────────────┐│
 │  │  Handlers: register, push, pull, health     ││
 │  └─────────────────────────────────────────────┘│
 ├─────────────────────────────────────────────────┤
-│  eck.db (SQLite file)                           │
+│  PostgreSQL "eck" database (shared server)      │
 │  - packets (encrypted blobs + metadata)         │
 │  - registrations (instance heartbeats)          │
 │  - accounts (api_key, plan, allowance)          │
@@ -30,7 +30,7 @@ Rust-based blind relay service for encrypted packet routing between eckWMS insta
 |-----------|------------|
 | Language | Rust (2024 edition) |
 | Web Framework | Axum 0.8 (Tokio) |
-| Database | SQLite (WAL mode) via sqlx |
+| Database | PostgreSQL via sqlx |
 | Serialization | Serde + Serde JSON |
 | Rate Limiting | governor (Token Bucket) |
 | IDs | UUID v4 |
