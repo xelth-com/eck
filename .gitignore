@@ -1,0 +1,11 @@
+/target
+*.db
+*.db-wal
+*.db-shm
+.env
+.eck/snapshots/
+.eck/lastsnapshot/
+.eck/snap/
+.eck/anchor
+.eck/update_seq
+.eck/SERVER_ACCESS.md
