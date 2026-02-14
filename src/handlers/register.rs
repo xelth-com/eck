@@ -1,25 +1,25 @@
 use axum::{extract::State, http::StatusCode, Json};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 use crate::models::{RegisterRequest, RegisterResponse};
 
 pub async fn register(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Json(req): Json<RegisterRequest>,
 ) -> Result<Json<RegisterResponse>, StatusCode> {
     sqlx::query(
         r#"
         INSERT INTO registrations (instance_id, external_ip, port, last_seen)
-        VALUES (?, ?, ?, datetime('now'))
+        VALUES ($1, $2, $3, NOW())
         ON CONFLICT(instance_id) DO UPDATE SET
-            external_ip = excluded.external_ip,
-            port = excluded.port,
-            last_seen = datetime('now')
+            external_ip = EXCLUDED.external_ip,
+            port = EXCLUDED.port,
+            last_seen = NOW()
         "#,
     )
     .bind(&req.instance_id)
     .bind(&req.external_ip)
-    .bind(req.port as i64)
+    .bind(req.port as i32)
     .execute(&pool)
     .await
     .map_err(|e| {

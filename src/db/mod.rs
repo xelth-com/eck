@@ -1,41 +1,40 @@
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::time::Duration;
 
-/// Initialize SQLite database with WAL mode.
-pub async fn init_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
-    let pool = SqlitePoolOptions::new()
+/// Initialize PostgreSQL connection pool and create tables.
+pub async fn init_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
+    let pool = PgPoolOptions::new()
         .max_connections(5)
-        .acquire_timeout(Duration::from_secs(3))
+        .acquire_timeout(Duration::from_secs(5))
         .connect(database_url)
-        .await?;
-
-    // Enable WAL mode for concurrent reads
-    sqlx::query("PRAGMA journal_mode=WAL")
-        .execute(&pool)
         .await?;
 
     // Create tables
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS packets (
-            id TEXT PRIMARY KEY,
+            id UUID PRIMARY KEY,
             target_instance_id TEXT NOT NULL,
             sender_instance_id TEXT NOT NULL,
-            payload_cipher BLOB NOT NULL,
-            nonce BLOB NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            ttl TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_packets_target
-            ON packets(target_instance_id);
-
-        CREATE INDEX IF NOT EXISTS idx_packets_ttl
-            ON packets(ttl);
+            payload_cipher BYTEA NOT NULL,
+            nonce BYTEA NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            ttl TIMESTAMPTZ NOT NULL
+        )
         "#,
     )
     .execute(&pool)
     .await?;
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_packets_target ON packets(target_instance_id)",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_packets_ttl ON packets(ttl)")
+        .execute(&pool)
+        .await?;
 
     sqlx::query(
         r#"
@@ -43,8 +42,8 @@ pub async fn init_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
             instance_id TEXT PRIMARY KEY,
             external_ip TEXT NOT NULL,
             port INTEGER NOT NULL,
-            last_seen TEXT NOT NULL DEFAULT (datetime('now'))
-        );
+            last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
         "#,
     )
     .execute(&pool)
@@ -56,19 +55,19 @@ pub async fn init_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
             api_key TEXT PRIMARY KEY,
             plan TEXT NOT NULL DEFAULT 'free',
             allowance INTEGER NOT NULL DEFAULT 100
-        );
+        )
         "#,
     )
     .execute(&pool)
     .await?;
 
-    tracing::info!("Database initialized (SQLite WAL mode)");
+    tracing::info!("Database initialized (PostgreSQL)");
     Ok(pool)
 }
 
 /// Delete expired packets.
-pub async fn cleanup_expired(pool: &SqlitePool) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query("DELETE FROM packets WHERE ttl < datetime('now')")
+pub async fn cleanup_expired(pool: &PgPool) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM packets WHERE ttl < NOW()")
         .execute(pool)
         .await?;
     Ok(result.rows_affected())

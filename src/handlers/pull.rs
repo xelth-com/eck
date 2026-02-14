@@ -1,21 +1,21 @@
 use axum::{extract::{Path, State}, http::StatusCode, Json};
-use chrono::{DateTime, NaiveDateTime, Utc};
-use sqlx::SqlitePool;
+use chrono::{DateTime, Utc};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::models::{EncryptedPacket, PullResponse};
 
 pub async fn pull(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Path(instance_id): Path<String>,
 ) -> Result<Json<PullResponse>, StatusCode> {
-    let rows = sqlx::query_as::<_, PacketRow>(
+    // Fetch and delete in one query (RETURNING)
+    let packets = sqlx::query_as::<_, PacketRow>(
         r#"
-        SELECT id, target_instance_id, sender_instance_id,
-               payload_cipher, nonce, created_at, ttl
-        FROM packets
-        WHERE target_instance_id = ? AND ttl > datetime('now')
-        ORDER BY created_at ASC
+        DELETE FROM packets
+        WHERE target_instance_id = $1 AND ttl > NOW()
+        RETURNING id, target_instance_id, sender_instance_id,
+                  payload_cipher, nonce, created_at, ttl
         "#,
     )
     .bind(&instance_id)
@@ -26,65 +26,34 @@ pub async fn pull(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Delete delivered packets
-    if !rows.is_empty() {
-        let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
-        let placeholders: Vec<&str> = ids.iter().map(|_| "?").collect();
-        let query = format!(
-            "DELETE FROM packets WHERE id IN ({})",
-            placeholders.join(",")
-        );
-        let mut q = sqlx::query(&query);
-        for id in &ids {
-            q = q.bind(id);
-        }
-        let _ = q.execute(&pool).await;
-    }
+    let result: Vec<EncryptedPacket> = packets.into_iter().map(Into::into).collect();
 
-    let packets: Vec<EncryptedPacket> = rows
-        .into_iter()
-        .filter_map(|r| r.try_into().ok())
-        .collect();
+    tracing::info!("Pull by {}: {} packets", instance_id, result.len());
 
-    tracing::info!("Pull by {}: {} packets", instance_id, packets.len());
-
-    Ok(Json(PullResponse { packets }))
+    Ok(Json(PullResponse { packets: result }))
 }
 
 #[derive(sqlx::FromRow)]
 struct PacketRow {
-    id: String,
+    id: Uuid,
     target_instance_id: String,
     sender_instance_id: String,
     payload_cipher: Vec<u8>,
     nonce: Vec<u8>,
-    created_at: String,
-    ttl: String,
+    created_at: DateTime<Utc>,
+    ttl: DateTime<Utc>,
 }
 
-fn parse_sqlite_datetime(s: &str) -> Option<DateTime<Utc>> {
-    // Try SQLite format first: "2026-02-14 13:40:29"
-    if let Ok(naive) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
-        return Some(naive.and_utc());
-    }
-    // Fallback to RFC3339
-    s.parse::<DateTime<Utc>>().ok()
-}
-
-impl TryFrom<PacketRow> for EncryptedPacket {
-    type Error = String;
-
-    fn try_from(row: PacketRow) -> Result<Self, Self::Error> {
-        Ok(EncryptedPacket {
-            id: Uuid::parse_str(&row.id).unwrap_or_default(),
+impl From<PacketRow> for EncryptedPacket {
+    fn from(row: PacketRow) -> Self {
+        EncryptedPacket {
+            id: row.id,
             target_instance_id: row.target_instance_id,
             sender_instance_id: row.sender_instance_id,
             payload_cipher: row.payload_cipher,
             nonce: row.nonce,
-            created_at: parse_sqlite_datetime(&row.created_at)
-                .ok_or_else(|| format!("Bad created_at: {}", row.created_at))?,
-            ttl: parse_sqlite_datetime(&row.ttl)
-                .ok_or_else(|| format!("Bad ttl: {}", row.ttl))?,
-        })
+            created_at: row.created_at,
+            ttl: row.ttl,
+        }
     }
 }

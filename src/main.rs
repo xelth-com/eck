@@ -16,7 +16,8 @@ async fn main() {
         .init();
 
     // Database
-    let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:eck.db?mode=rwc".into());
+    let db_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://openpg:openpg@localhost:5432/eck".into());
     let pool = db::init_pool(&db_url)
         .await
         .expect("Failed to initialize database");

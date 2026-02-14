@@ -1,6 +1,6 @@
 use axum::{extract::State, http::StatusCode, Json};
 use chrono::{Duration, Utc};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::models::{PushRequest, PushResponse};
@@ -9,7 +9,7 @@ use crate::models::{PushRequest, PushResponse};
 const MAX_PAYLOAD_SIZE: usize = 1_048_576;
 
 pub async fn push(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Json(req): Json<PushRequest>,
 ) -> Result<Json<PushResponse>, StatusCode> {
     if req.payload_cipher.len() > MAX_PAYLOAD_SIZE {
@@ -23,15 +23,15 @@ pub async fn push(
     sqlx::query(
         r#"
         INSERT INTO packets (id, target_instance_id, sender_instance_id, payload_cipher, nonce, ttl)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6)
         "#,
     )
-    .bind(id.to_string())
+    .bind(id)
     .bind(&req.target_instance_id)
     .bind(&req.sender_instance_id)
     .bind(&req.payload_cipher)
     .bind(&req.nonce)
-    .bind(ttl.format("%Y-%m-%d %H:%M:%S").to_string())
+    .bind(ttl)
     .execute(&pool)
     .await
     .map_err(|e| {
