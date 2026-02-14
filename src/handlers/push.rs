@@ -31,7 +31,7 @@ pub async fn push(
     .bind(&req.sender_instance_id)
     .bind(&req.payload_cipher)
     .bind(&req.nonce)
-    .bind(ttl.to_rfc3339())
+    .bind(ttl.format("%Y-%m-%d %H:%M:%S").to_string())
     .execute(&pool)
     .await
     .map_err(|e| {

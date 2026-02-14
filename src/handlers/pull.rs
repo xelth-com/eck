@@ -1,5 +1,5 @@
 use axum::{extract::{Path, State}, http::StatusCode, Json};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -62,8 +62,17 @@ struct PacketRow {
     ttl: String,
 }
 
+fn parse_sqlite_datetime(s: &str) -> Option<DateTime<Utc>> {
+    // Try SQLite format first: "2026-02-14 13:40:29"
+    if let Ok(naive) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+        return Some(naive.and_utc());
+    }
+    // Fallback to RFC3339
+    s.parse::<DateTime<Utc>>().ok()
+}
+
 impl TryFrom<PacketRow> for EncryptedPacket {
-    type Error = chrono::ParseError;
+    type Error = String;
 
     fn try_from(row: PacketRow) -> Result<Self, Self::Error> {
         Ok(EncryptedPacket {
@@ -72,8 +81,10 @@ impl TryFrom<PacketRow> for EncryptedPacket {
             sender_instance_id: row.sender_instance_id,
             payload_cipher: row.payload_cipher,
             nonce: row.nonce,
-            created_at: row.created_at.parse::<DateTime<Utc>>()?,
-            ttl: row.ttl.parse::<DateTime<Utc>>()?,
+            created_at: parse_sqlite_datetime(&row.created_at)
+                .ok_or_else(|| format!("Bad created_at: {}", row.created_at))?,
+            ttl: parse_sqlite_datetime(&row.ttl)
+                .ok_or_else(|| format!("Bad ttl: {}", row.ttl))?,
         })
     }
 }
