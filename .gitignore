@@ -9,3 +9,6 @@
 .eck/anchor
 .eck/update_seq
 .eck/SERVER_ACCESS.md
+
+# Added by eck-snapshot to ignore metadata directory
+.eck/
