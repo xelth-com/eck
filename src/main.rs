@@ -22,26 +22,33 @@ async fn main() {
         .await
         .expect("Failed to initialize database");
 
-    // Background cleanup task
     let cleanup_pool = pool.clone();
     tokio::spawn(async move {
         let mut tick = interval(Duration::from_secs(60));
         loop {
             tick.tick().await;
+            
             match db::cleanup_expired(&cleanup_pool).await {
                 Ok(n) if n > 0 => tracing::info!("Cleaned up {n} expired packets"),
                 Err(e) => tracing::warn!("Cleanup error: {e}"),
                 _ => {}
             }
+            
+            match db::mark_offline_nodes(&cleanup_pool).await {
+                Ok(n) if n > 0 => tracing::info!("Marked {n} nodes as offline"),
+                Err(e) => tracing::warn!("Offline detection error: {e}"),
+                _ => {}
+            }
         }
     });
 
-    // Routes — all under /E/ prefix
     let app = Router::new()
         .route("/E/health", get(handlers::health))
         .route("/E/register", post(handlers::register))
         .route("/E/push", post(handlers::push))
-        .route("/E/pull/{id}", get(handlers::pull))
+        .route("/E/pull/{mesh_id}/{instance_id}", get(handlers::pull))
+        .route("/E/mesh/{mesh_id}/status", get(handlers::mesh_status))
+        .route("/E/mesh/{mesh_id}/resolve/{instance_id}", get(handlers::resolve_node))
         .layer(CorsLayer::permissive())
         .with_state(pool);
 

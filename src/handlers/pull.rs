@@ -7,17 +7,19 @@ use crate::models::{EncryptedPacket, PullResponse};
 
 pub async fn pull(
     State(pool): State<PgPool>,
-    Path(instance_id): Path<String>,
+    Path((mesh_id, instance_id)): Path<(String, String)>,
 ) -> Result<Json<PullResponse>, StatusCode> {
-    // Fetch and delete in one query (RETURNING)
     let packets = sqlx::query_as::<_, PacketRow>(
         r#"
         DELETE FROM packets
-        WHERE target_instance_id = $1 AND ttl > NOW()
-        RETURNING id, target_instance_id, sender_instance_id,
+        WHERE mesh_id = $1 
+          AND target_instance_id = $2 
+          AND ttl > NOW()
+        RETURNING id, mesh_id, target_instance_id, sender_instance_id,
                   payload_cipher, nonce, created_at, ttl
         "#,
     )
+    .bind(&mesh_id)
     .bind(&instance_id)
     .fetch_all(&pool)
     .await
@@ -28,14 +30,18 @@ pub async fn pull(
 
     let result: Vec<EncryptedPacket> = packets.into_iter().map(Into::into).collect();
 
-    tracing::info!("Pull by {}: {} packets", instance_id, result.len());
+    tracing::info!("Pull: [{}] {} got {} packets", mesh_id, instance_id, result.len());
 
-    Ok(Json(PullResponse { packets: result }))
+    Ok(Json(PullResponse { 
+        mesh_id,
+        packets: result,
+    }))
 }
 
 #[derive(sqlx::FromRow)]
 struct PacketRow {
     id: Uuid,
+    mesh_id: String,
     target_instance_id: String,
     sender_instance_id: String,
     payload_cipher: Vec<u8>,
@@ -48,6 +54,7 @@ impl From<PacketRow> for EncryptedPacket {
     fn from(row: PacketRow) -> Self {
         EncryptedPacket {
             id: row.id,
+            mesh_id: row.mesh_id,
             target_instance_id: row.target_instance_id,
             sender_instance_id: row.sender_instance_id,
             payload_cipher: row.payload_cipher,

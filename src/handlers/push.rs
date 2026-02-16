@@ -17,16 +17,17 @@ pub async fn push(
     }
 
     let id = Uuid::new_v4();
-    let ttl_seconds = req.ttl_seconds.unwrap_or(3600); // default 1 hour
+    let ttl_seconds = req.ttl_seconds.unwrap_or(3600);
     let ttl = Utc::now() + Duration::seconds(ttl_seconds as i64);
 
     sqlx::query(
         r#"
-        INSERT INTO packets (id, target_instance_id, sender_instance_id, payload_cipher, nonce, ttl)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO packets (id, mesh_id, target_instance_id, sender_instance_id, payload_cipher, nonce, ttl)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
     )
     .bind(id)
+    .bind(&req.mesh_id)
     .bind(&req.target_instance_id)
     .bind(&req.sender_instance_id)
     .bind(&req.payload_cipher)
@@ -40,8 +41,8 @@ pub async fn push(
     })?;
 
     tracing::info!(
-        "Packet {} stored: {} -> {} (ttl {}s)",
-        id, req.sender_instance_id, req.target_instance_id, ttl_seconds
+        "Packet {} stored: [{}] {} -> {} (ttl {}s)",
+        id, req.mesh_id, req.sender_instance_id, req.target_instance_id, ttl_seconds
     );
 
     Ok(Json(PushResponse { ok: true, packet_id: id }))

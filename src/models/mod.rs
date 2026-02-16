@@ -6,6 +6,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EncryptedPacket {
     pub id: Uuid,
+    pub mesh_id: String,
     pub target_instance_id: String,
     pub sender_instance_id: String,
     #[serde(with = "base64_bytes")]
@@ -35,19 +36,25 @@ pub enum Plan {
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
     pub instance_id: String,
+    pub mesh_id: String,
     pub external_ip: String,
     pub port: u16,
+    #[serde(default)]
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct RegisterResponse {
     pub ok: bool,
     pub instance_id: String,
+    pub mesh_id: String,
+    pub status: String,
 }
 
 /// Push packet request.
 #[derive(Debug, Deserialize)]
 pub struct PushRequest {
+    pub mesh_id: String,
     pub target_instance_id: String,
     pub sender_instance_id: String,
     #[serde(with = "base64_bytes")]
@@ -66,7 +73,24 @@ pub struct PushResponse {
 /// Pull response — list of pending packets.
 #[derive(Debug, Serialize)]
 pub struct PullResponse {
+    pub mesh_id: String,
     pub packets: Vec<EncryptedPacket>,
+}
+
+/// Mesh status response — list of nodes in a mesh.
+#[derive(Debug, Serialize)]
+pub struct MeshStatusResponse {
+    pub mesh_id: String,
+    pub nodes: Vec<NodeStatus>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NodeStatus {
+    pub instance_id: String,
+    pub external_ip: String,
+    pub port: u16,
+    pub status: String,
+    pub last_seen: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize)]
